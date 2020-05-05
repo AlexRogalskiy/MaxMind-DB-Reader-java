@@ -134,11 +134,21 @@ public final class Reader implements Closeable {
         this.ipV4Start = this.findIpV4StartNode(buffer);
     }
 
+    /** Produce a copy of this reader, which can be used in a separate thread.
+     *
+     * Example of how to use in multi-threaded context:
+     * <pre>
+     *     private ThreadLocal<Reader> readerThreadLocal = new ThreadLocal() {
+     *         Reader base = new Reader(...)
+     *         public Reader initialValue() { return base.threadSafeCopy(); }
+     *     }
+     * </pre>
+     * */
     public Reader threadSafeCopy() {
         return new Reader(bufferHolderReference, cache, metadata, ipV4Start);
     }
 
-    public Reader(AtomicReference<BufferHolder> holder, NodeCache cache, Metadata metadata, int ipV4Start) {
+    private Reader(AtomicReference<BufferHolder> holder, NodeCache cache, Metadata metadata, int ipV4Start) {
         this.bufferHolderReference = holder;
         this.cache = cache;
         this.metadata = metadata;
@@ -157,8 +167,25 @@ public final class Reader implements Closeable {
         return getRecord(ipAddress).getData();
     }
 
+    /**
+     * Looks up an IPv4 address
+     * @param ipV4Address
+     * @return the record data for the IP address
+     * @throws IOException
+     */
     public JsonNode get(int ipV4Address) throws IOException {
         return getRecord(ipV4Address).getData();
+    }
+
+    /**
+     * Looks up an IPv6 address
+     * @param ipV6AddressHigh The most significant 64 bits of the IPv6 address
+     * @param ipV6AddressLow The least significant 64 bits of the IPv6 address
+     * @return the record data for the IP address
+     * @throws IOException
+     */
+    public JsonNode get(long ipV6AddressHigh, long ipV6AddressLow) throws IOException {
+        return getRecord(ipV6AddressHigh, ipV6AddressLow).getData();
     }
 
     /**
@@ -216,6 +243,33 @@ public final class Reader implements Closeable {
         }
 
         return new Record(dataRecord, ipV4Address, pl);
+    }
+
+
+    public Record getRecord(long addrHigh, long addrLow)
+            throws IOException {
+        ByteBuffer buffer = this.getBufferHolder().get();
+
+        int record = this.startNode(128);
+        int nodeCount = this.metadata.getNodeCount();
+
+        int pl = 0;
+        for (; pl < 64 && record < nodeCount; pl++) {
+            int bit = (int) (0x01 & (addrHigh >> (63-pl)));
+            record = this.readNode(buffer, record, bit);
+        }
+        for (; pl < 128 && record < nodeCount; pl++) {
+            int bit = (int) (0x01 & (addrLow >> (63-(pl-64))));
+            record = this.readNode(buffer, record, bit);
+        }
+
+        JsonNode dataRecord = null;
+        if (record > nodeCount) {
+            // record is a data pointer
+            dataRecord = this.resolveDataPointer(buffer, record);
+        }
+
+        return new Record(dataRecord, addrHigh, addrLow, pl);
     }
 
 

@@ -14,6 +14,8 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.*;
 
 import static org.junit.Assert.*;
@@ -86,14 +88,38 @@ public class ReaderTest {
         };
         for (GetRecordTest test : tests) {
             try (Reader reader = new Reader(test.db)) {
-                Record record = reader.getRecord(test.ip);
 
-                assertEquals(test.network, record.getNetwork().toString());
+                // test using InetAddress
+                {
+                    Record record = reader.getRecord(test.ip);
 
-                if (test.hasRecord) {
-                    assertNotNull(record.getData());
-                } else {
-                    assertNull(record.getData());
+                    assertEquals(test.network, record.getNetwork().toString());
+
+                    if (test.hasRecord) {
+                        assertNotNull(record.getData());
+                    } else {
+                        assertNull(record.getData());
+                    }
+                }
+
+                // test using int/longlong API
+                {
+                    byte[] bytes = test.ip.getAddress();
+                    ByteBuffer bb = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+                    Record record;
+                    if (bytes.length == 4) {
+                        record = reader.getRecord(bb.getInt());
+                    } else {
+                        record = reader.getRecord(bb.getLong(0), bb.getLong(8));
+                    }
+
+                    assertEquals(test.network, record.getNetwork().toString());
+
+                    if (test.hasRecord) {
+                        assertNotNull(record.getData());
+                    } else {
+                        assertNull(record.getData());
+                    }
                 }
             }
         }
@@ -118,6 +144,9 @@ public class ReaderTest {
                 .textValue());
         assertEquals("::0/64", reader.get(InetAddress.getByName("192.1.1.1"))
                 .textValue());
+        assertEquals("::0/64", reader.get(0x01010101).textValue());
+        assertEquals("::0/64", reader.get(0xc0010101).textValue());
+        assertEquals("::0/64", reader.get(0, 0x01010101).textValue());
     }
 
     @Test
