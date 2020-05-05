@@ -24,6 +24,32 @@ import com.fasterxml.jackson.databind.node.*;
  */
 final class Decoder {
 
+    public static final class Pos {
+        private int p;
+
+        public Pos(int offset) { p = offset; }
+
+        public Pos set(int i) {
+            this.p = i;
+            return this;
+        }
+
+        public Pos inc(int i) {
+            this.p += i;
+            return this;
+        }
+
+        public int get() {
+            return p;
+        }
+
+        public int getAndInc(int i) {
+            int res = p;
+            p += i;
+            return res;
+        }
+    }
+
     private static final Charset UTF_8 = StandardCharsets.UTF_8;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -75,6 +101,8 @@ final class Decoder {
 
     private final NodeCache.Loader cacheLoader = this::decode;
 
+    private Pos pos = new Pos(0);
+
     JsonNode decode(int offset) throws IOException {
         if (offset >= this.buffer.capacity()) {
             throw new InvalidDatabaseException(
@@ -82,12 +110,14 @@ final class Decoder {
                             + "pointer larger than the database.");
         }
 
-        this.buffer.position(offset);
-        return decode();
+        int save = pos.get();
+        JsonNode res = decodeAt(pos.set(offset));
+        pos.set(save);
+        return res;
     }
 
-    private JsonNode decode() throws IOException {
-        int ctrlByte = 0xFF & this.buffer.get();
+    private JsonNode decodeAt(Pos pos) throws IOException {
+        int ctrlByte = 0xFF & this.buffer.get(pos.getAndInc(1));
 
         Type type = Type.fromControlByte(ctrlByte);
 
@@ -97,7 +127,7 @@ final class Decoder {
         if (type.equals(Type.POINTER)) {
             int pointerSize = ((ctrlByte >>> 3) & 0x3) + 1;
             int base = pointerSize == 4 ? (byte) 0 : (byte) (ctrlByte & 0x7);
-            int packed = this.decodeInteger(base, pointerSize);
+            int packed = this.decodeIntegerAt(pos, base, pointerSize);
             long pointer = packed + this.pointerBase + POINTER_VALUE_OFFSETS[pointerSize];
 
             // for unit testing
@@ -106,14 +136,12 @@ final class Decoder {
             }
 
             int targetOffset = (int) pointer;
-            int position = buffer.position();
             JsonNode node = cache.get(targetOffset, cacheLoader);
-            buffer.position(position);
             return node;
         }
 
         if (type.equals(Type.EXTENDED)) {
-            int nextByte = this.buffer.get();
+            int nextByte = this.buffer.get(pos.getAndInc(1));
 
             int typeNum = nextByte + 7;
 
@@ -131,119 +159,116 @@ final class Decoder {
         if (size >= 29) {
             switch (size) {
                 case 29:
-                    size = 29 + (0xFF & buffer.get());
+                    size = 29 + (0xFF & buffer.get(pos.getAndInc(1)));
                     break;
                 case 30:
-                    size = 285 + decodeInteger(2);
+                    size = 285 + decodeIntegerAt(pos, 2);
                     break;
                 default:
-                    size = 65821 + decodeInteger(3);
+                    size = 65821 + decodeIntegerAt(pos, 3);
             }
         }
 
-        return this.decodeByType(type, size);
+        return this.decodeByTypeAt(pos, type, size);
     }
 
-    private JsonNode decodeByType(Type type, int size)
+    private JsonNode decodeByTypeAt(Pos pos, Type type, int size)
             throws IOException {
         switch (type) {
             case MAP:
-                return this.decodeMap(size);
+                return this.decodeMapAt(pos, size);
             case ARRAY:
-                return this.decodeArray(size);
+                return this.decodeArrayAt(pos, size);
             case BOOLEAN:
-                return Decoder.decodeBoolean(size);
+                return Decoder.decodeBooleanAt(pos, size);
             case UTF8_STRING:
-                return new TextNode(this.decodeString(size));
+                return new TextNode(this.decodeStringAt(pos, size));
             case DOUBLE:
-                return this.decodeDouble(size);
+                return this.decodeDoubleAt(pos, size);
             case FLOAT:
-                return this.decodeFloat(size);
+                return this.decodeFloatAt(pos, size);
             case BYTES:
-                return new BinaryNode(this.getByteArray(size));
+                return new BinaryNode(this.getByteArrayAt(pos, size));
             case UINT16:
-                return this.decodeUint16(size);
+                return this.decodeUint16At(pos, size);
             case UINT32:
-                return this.decodeUint32(size);
+                return this.decodeUint32At(pos, size);
             case INT32:
-                return this.decodeInt32(size);
+                return this.decodeInt32At(pos, size);
             case UINT64:
             case UINT128:
-                return this.decodeBigInteger(size);
+                return this.decodeBigIntegerAt(pos, size);
             default:
                 throw new InvalidDatabaseException(
                         "Unknown or unexpected type: " + type.name());
         }
     }
 
-    private String decodeString(int size) throws CharacterCodingException {
-        int oldLimit = buffer.limit();
-        buffer.limit(buffer.position() + size);
-        String s = utfDecoder.decode(buffer).toString();
-        buffer.limit(oldLimit);
-        return s;
+    private String decodeStringAt(Pos pos, int size) throws CharacterCodingException {
+        byte[] bytes = this.getByteArrayAt(pos, size);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    private IntNode decodeUint16(int size) {
-        return new IntNode(this.decodeInteger(size));
+    private IntNode decodeUint16At(Pos pos, int size) {
+        return new IntNode(this.decodeIntegerAt(pos, size));
     }
 
-    private IntNode decodeInt32(int size) {
-        return new IntNode(this.decodeInteger(size));
+    private IntNode decodeInt32At(Pos pos, int size) {
+        return new IntNode(this.decodeIntegerAt(pos, size));
     }
 
-    private long decodeLong(int size) {
+    private long decodeLongAt(Pos pos, int size) {
         long integer = 0;
         for (int i = 0; i < size; i++) {
-            integer = (integer << 8) | (this.buffer.get() & 0xFF);
+            integer = (integer << 8) | (this.buffer.get(pos.getAndInc(1)) & 0xFF);
         }
         return integer;
     }
 
-    private LongNode decodeUint32(int size) {
-        return new LongNode(this.decodeLong(size));
+    private LongNode decodeUint32At(Pos pos, int size) {
+        return new LongNode(this.decodeLongAt(pos, size));
     }
 
-    private int decodeInteger(int size) {
-        return this.decodeInteger(0, size);
+    private int decodeIntegerAt(Pos pos, int size) {
+        return this.decodeIntegerAt(pos, 0, size);
     }
 
-    private int decodeInteger(int base, int size) {
-        return Decoder.decodeInteger(this.buffer, base, size);
+    private int decodeIntegerAt(Pos pos, int base, int size) {
+        return Decoder.decodeIntegerAt(this.buffer, pos, base, size);
     }
 
-    static int decodeInteger(ByteBuffer buffer, int base, int size) {
+    static int decodeIntegerAt(ByteBuffer buffer, Pos pos, int base, int size) {
         int integer = base;
         for (int i = 0; i < size; i++) {
-            integer = (integer << 8) | (buffer.get() & 0xFF);
+            integer = (integer << 8) | (buffer.get(pos.getAndInc(1)) & 0xFF);
         }
         return integer;
     }
 
-    private BigIntegerNode decodeBigInteger(int size) {
-        byte[] bytes = this.getByteArray(size);
+    private BigIntegerNode decodeBigIntegerAt(Pos pos, int size) {
+        byte[] bytes = this.getByteArrayAt(pos, size);
         return new BigIntegerNode(new BigInteger(1, bytes));
     }
 
-    private DoubleNode decodeDouble(int size) throws InvalidDatabaseException {
+    private DoubleNode decodeDoubleAt(Pos pos, int size) throws InvalidDatabaseException {
         if (size != 8) {
             throw new InvalidDatabaseException(
                     "The MaxMind DB file's data section contains bad data: "
                             + "invalid size of double.");
         }
-        return new DoubleNode(this.buffer.getDouble());
+        return new DoubleNode(this.buffer.getDouble(pos.getAndInc(size)));
     }
 
-    private FloatNode decodeFloat(int size) throws InvalidDatabaseException {
+    private FloatNode decodeFloatAt(Pos pos, int size) throws InvalidDatabaseException {
         if (size != 4) {
             throw new InvalidDatabaseException(
                     "The MaxMind DB file's data section contains bad data: "
                             + "invalid size of float.");
         }
-        return new FloatNode(this.buffer.getFloat());
+        return new FloatNode(this.buffer.getFloat(pos.getAndInc(size)));
     }
 
-    private static BooleanNode decodeBoolean(int size)
+    private static BooleanNode decodeBooleanAt(Pos pos, int size)
             throws InvalidDatabaseException {
         switch (size) {
             case 0:
@@ -257,37 +282,42 @@ final class Decoder {
         }
     }
 
-    private JsonNode decodeArray(int size) throws IOException {
+    private JsonNode decodeArrayAt(Pos pos, int size) throws IOException {
 
         List<JsonNode> array = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
-            JsonNode r = this.decode();
+            JsonNode r = this.decodeAt(pos);
             array.add(r);
         }
 
         return new ArrayNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableList(array));
     }
 
-    private JsonNode decodeMap(int size) throws IOException {
+    private JsonNode decodeMapAt(Pos pos, int size) throws IOException {
         int capacity = (int) (size / 0.75F + 1.0F);
         Map<String, JsonNode> map = new HashMap<>(capacity);
 
         for (int i = 0; i < size; i++) {
-            String key = this.decode().asText();
-            JsonNode value = this.decode();
+            String key = this.decodeAt(pos).asText();
+            JsonNode value = this.decodeAt(pos);
             map.put(key, value);
         }
 
         return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(map));
     }
 
-    private byte[] getByteArray(int length) {
-        return Decoder.getByteArray(this.buffer, length);
+    private byte[] getByteArrayAt(Pos pos, int length) {
+        return Decoder.getByteArrayAt(this.buffer, pos, length);
     }
 
-    private static byte[] getByteArray(ByteBuffer buffer, int length) {
+    private static byte[] getByteArrayAt(ByteBuffer buffer, Pos pos, int length) {
         byte[] bytes = new byte[length];
-        buffer.get(bytes);
+
+        for (int i = 0, j = pos.get(); i < length; i++, j++)
+            bytes[i] = buffer.get(j);
+
+        pos.inc(length);
+
         return bytes;
     }
 }

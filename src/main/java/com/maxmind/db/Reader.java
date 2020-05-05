@@ -134,6 +134,18 @@ public final class Reader implements Closeable {
         this.ipV4Start = this.findIpV4StartNode(buffer);
     }
 
+    public Reader threadSafeCopy() {
+        return new Reader(bufferHolderReference, cache, metadata, ipV4Start);
+    }
+
+    public Reader(AtomicReference<BufferHolder> holder, NodeCache cache, Metadata metadata, int ipV4Start) {
+        this.bufferHolderReference = holder;
+        this.cache = cache;
+        this.metadata = metadata;
+        this.ipV4Start = ipV4Start;
+    }
+
+
     /**
      * Looks up <code>ipAddress</code> in the MaxMind DB.
      *
@@ -211,14 +223,16 @@ public final class Reader implements Closeable {
         return node;
     }
 
+    private Decoder.Pos pos = new Decoder.Pos(0);
+
     private int readNode(ByteBuffer buffer, int nodeNumber, int index)
             throws InvalidDatabaseException {
         int baseOffset = nodeNumber * this.metadata.getNodeByteSize();
 
         switch (this.metadata.getRecordSize()) {
             case 24:
-                buffer.position(baseOffset + index * 3);
-                return Decoder.decodeInteger(buffer, 0, 3);
+                pos.set(baseOffset + index * 3);
+                return Decoder.decodeIntegerAt(buffer, pos, 0, 3);
             case 28:
                 int middle = buffer.get(baseOffset + 3);
 
@@ -227,16 +241,18 @@ public final class Reader implements Closeable {
                 } else {
                     middle = 0x0F & middle;
                 }
-                buffer.position(baseOffset + index * 4);
-                return Decoder.decodeInteger(buffer, middle, 3);
+                pos.set(baseOffset + index * 4);
+                return Decoder.decodeIntegerAt(buffer, pos, middle, 3);
             case 32:
-                buffer.position(baseOffset + index * 4);
-                return Decoder.decodeInteger(buffer, 0, 4);
+                pos.set(baseOffset + index * 4);
+                return Decoder.decodeIntegerAt(buffer, pos, 0, 4);
             default:
                 throw new InvalidDatabaseException("Unknown record size: "
                         + this.metadata.getRecordSize());
         }
     }
+
+    private Decoder dataDecoder = null;
 
     private JsonNode resolveDataPointer(ByteBuffer buffer, int pointer)
             throws IOException {
@@ -249,11 +265,13 @@ public final class Reader implements Closeable {
                             + "contains pointer larger than the database.");
         }
 
-        // We only want the data from the decoder, not the offset where it was
-        // found.
-        Decoder decoder = new Decoder(this.cache, buffer,
-                this.metadata.getSearchTreeSize() + DATA_SECTION_SEPARATOR_SIZE);
-        return decoder.decode(resolved);
+        if (dataDecoder == null) {
+            // We only want the data from the decoder, not the offset where it was
+            // found.
+            dataDecoder = new Decoder(this.cache, buffer,
+                    this.metadata.getSearchTreeSize() + DATA_SECTION_SEPARATOR_SIZE);
+        }
+        return dataDecoder.decode(resolved);
     }
 
     /*

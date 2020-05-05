@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -19,9 +20,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class MultiThreadedTest {
 
     @Test
-    public void multipleMmapOpens() throws InterruptedException,
-            ExecutionException {
-        Callable<JsonNode> task = () -> {
+    public void multipleMmapOpens() throws Exception {
+        Callable<Callable<JsonNode>> task = () -> () -> {
             try (Reader reader = new Reader(ReaderTest.getFile("MaxMind-DB-test-decoder.mmdb"))) {
                 return reader.get(InetAddress.getByName("::1.1.1.0"));
             }
@@ -30,31 +30,35 @@ public class MultiThreadedTest {
     }
 
     @Test
-    public void streamThreadTest() throws IOException, InterruptedException,
-            ExecutionException {
+    public void streamThreadTest() throws Exception {
         try (Reader reader = new Reader(ReaderTest.getStream("MaxMind-DB-test-decoder.mmdb"))) {
             MultiThreadedTest.threadTest(reader);
         }
     }
 
     @Test
-    public void mmapThreadTest() throws IOException, InterruptedException,
-            ExecutionException {
+    public void mmapThreadTest() throws Exception {
         try (Reader reader = new Reader(ReaderTest.getFile("MaxMind-DB-test-decoder.mmdb"))) {
             MultiThreadedTest.threadTest(reader);
         }
     }
 
-    private static void threadTest(final Reader reader)
-            throws InterruptedException, ExecutionException {
-        Callable<JsonNode> task = () -> reader.get(InetAddress.getByName("::1.1.1.0"));
+    private static void threadTest(final Reader sharedReader)
+            throws Exception {
+        Callable<Callable<JsonNode>> task = () -> {
+            Reader reader = sharedReader.threadSafeCopy();
+            return () -> reader.get(InetAddress.getByName("::1.1.1.0"));
+        };
         MultiThreadedTest.runThreads(task);
     }
 
-    private static void runThreads(Callable<JsonNode> task)
-            throws InterruptedException, ExecutionException {
+    private static void runThreads(Callable<Callable<JsonNode>> taskMaker)
+            throws Exception {
         int threadCount = 256;
-        List<Callable<JsonNode>> tasks = Collections.nCopies(threadCount, task);
+        List<Callable<JsonNode>> tasks = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            tasks.add( taskMaker.call() );
+        }
         ExecutorService executorService = Executors
                 .newFixedThreadPool(threadCount);
         List<Future<JsonNode>> futures = executorService.invokeAll(tasks);

@@ -27,6 +27,7 @@ final class BufferHolder {
                             + database.getName()
                             + " into memory. Unexpected end of stream.");
                 }
+                this.buffer.asReadOnlyBuffer();
             } else {
                 this.buffer = channel.map(MapMode.READ_ONLY, 0, channel.size());
             }
@@ -50,7 +51,7 @@ final class BufferHolder {
         while (-1 != (br = stream.read(bytes))) {
             baos.write(bytes, 0, br);
         }
-        this.buffer = ByteBuffer.wrap(baos.toByteArray());
+        this.buffer = ByteBuffer.wrap(baos.toByteArray()).asReadOnlyBuffer();
     }
 
     /*
