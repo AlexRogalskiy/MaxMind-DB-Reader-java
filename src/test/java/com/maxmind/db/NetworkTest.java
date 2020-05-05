@@ -10,7 +10,7 @@ import static junit.framework.TestCase.assertEquals;
 public class NetworkTest {
     @Test
     public void testIPv6() throws UnknownHostException {
-        Network network = new Network(
+        Network network = Network.forInetAddress(
                 InetAddress.getByName("2001:0db8:85a3:0000:0000:8a2e:0370:7334"),
                 28
         );
@@ -21,8 +21,20 @@ public class NetworkTest {
     }
 
     @Test
+    public void testIPv6_2() throws UnknownHostException {
+        Network network = Network.forInetAddress(
+                InetAddress.getByName("2001:0db8:85a3:0000:0000:8a2e:0370:7334"),
+                94
+        );
+
+        assertEquals("2001:db8:85a3:0:0:8a2c:0:0", network.getNetworkAddress().getHostAddress());
+        assertEquals(94, network.getPrefixLength());
+        assertEquals("2001:db8:85a3:0:0:8a2c:0:0/94", network.toString());
+    }
+
+    @Test
     public void TestIPv4() throws UnknownHostException {
-        Network network = new Network(
+        Network network = Network.forInetAddress(
                 InetAddress.getByName("192.168.213.111"),
                 31
         );

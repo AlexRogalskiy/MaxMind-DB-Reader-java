@@ -20,7 +20,17 @@ public final class Record {
      */
     public Record(JsonNode data, InetAddress ipAddress, int prefixLength) {
         this.data = data;
-        this.network = new Network(ipAddress, prefixLength);
+        this.network = Network.forInetAddress(ipAddress, prefixLength);
+    }
+
+    public Record(JsonNode data, int ipV4Address, int prefixLength) {
+        this.data = data;
+        this.network = Network.forAddress(ipV4Address, prefixLength);
+    }
+
+    public Record(JsonNode data, long highAddress, long lowAddress, int prefixLength) {
+        this.data = data;
+        this.network = Network.forAddress(highAddress, lowAddress, prefixLength);
     }
 
     /**

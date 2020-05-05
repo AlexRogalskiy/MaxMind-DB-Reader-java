@@ -157,6 +157,10 @@ public final class Reader implements Closeable {
         return getRecord(ipAddress).getData();
     }
 
+    public JsonNode get(int ipV4Address) throws IOException {
+        return getRecord(ipV4Address).getData();
+    }
+
     /**
      * Looks up <code>ipAddress</code> in the MaxMind DB.
      *
@@ -190,6 +194,31 @@ public final class Reader implements Closeable {
 
         return new Record(dataRecord, ipAddress, pl);
     }
+
+
+    public Record getRecord(int ipV4Address)
+            throws IOException {
+        ByteBuffer buffer = this.getBufferHolder().get();
+
+        int record = this.startNode(32);
+        int nodeCount = this.metadata.getNodeCount();
+
+        int pl = 0;
+        for (; pl < 32 && record < nodeCount; pl++) {
+            int bit = 0x01 & (ipV4Address >> (31-pl));
+            record = this.readNode(buffer, record, bit);
+        }
+
+        JsonNode dataRecord = null;
+        if (record > nodeCount) {
+            // record is a data pointer
+            dataRecord = this.resolveDataPointer(buffer, record);
+        }
+
+        return new Record(dataRecord, ipV4Address, pl);
+    }
+
+
 
     private BufferHolder getBufferHolder() throws ClosedDatabaseException {
         BufferHolder bufferHolder = this.bufferHolderReference.get();
