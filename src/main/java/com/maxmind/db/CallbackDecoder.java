@@ -243,7 +243,13 @@ final class CallbackDecoder {
 		}
 		return;
             case ARRAY:
-		skipArray(size); return;
+		if (callback instanceof Callbacks.ArrayNode) {
+		    Callbacks.ArrayNode<State> cb = (Callbacks.ArrayNode<State>)callback;
+		    decodeArray(size, cb, state);
+		} else {
+		    skipArray(size);
+		}
+		return;
             case BOOLEAN:
 		return; //FUT support callback.
             case UTF8_STRING:
@@ -512,18 +518,18 @@ final class CallbackDecoder {
         }
     }
 
-    /*
-    private JsonNode decodeArray(int size) throws IOException {
-
-        List<JsonNode> array = new ArrayList<>(size);
+    private <State> void decodeArray(int size, Callbacks.ArrayNode<State> callback, State state) throws IOException {
+	callback.arrayBegin(state, size);
         for (int i = 0; i < size; i++) {
-            JsonNode r = this.decode();
-            array.add(r);
-        }
-
-        return new ArrayNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableList(array));
+	    Callbacks.Callback<State> elementCallback = callback.callbackForElement(state, i, size);
+	    if (elementCallback != null) {
+		decode(elementCallback, state); // Value is of interest.
+	    } else {
+		skip();
+	    }
+	}
+	callback.arrayEnd(state);
     }
-    */
 
     private void skipArray(int size) throws IOException {
         for (int i = 0; i < size; i++) {
@@ -543,7 +549,8 @@ final class CallbackDecoder {
 		skip();
 	    }
 	}
-	callback.objectEnd(state);}
+	callback.objectEnd(state);
+    }
 
     private void skipMap(int size) throws IOException {
         for (int i = 0; i < size; i++) {

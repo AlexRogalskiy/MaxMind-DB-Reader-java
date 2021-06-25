@@ -30,6 +30,24 @@ public class Callbacks {
 	public abstract void setValue(X state, double value);
     }
 
+    @FunctionalInterface
+    /** Like BiConsumer&lt;X,Integer&gt; but avoiding boxing. */
+    public static interface ArrayBeginCallback<X> {
+	public abstract void accept(X state, int size);
+    }
+    @FunctionalInterface
+    public static interface ArrayElementCallback<X> {
+	public abstract Callback<X> callbackForPosition(X state, int index, int size);
+    }
+
+    public abstract static class ArrayNode<X> implements Callback<X> {
+	public ArrayNode() {}
+
+	public void arrayBegin(X state, int size) {}
+	public abstract Callback<X> callbackForElement(X state, int i, int size);
+	public void arrayEnd(X state) {}
+    }
+
     public static class ObjectNode<X> implements Callback<X> {
 	private final Map<CharSequence, Callback<X>> fieldsOfInterest;
 
@@ -116,6 +134,31 @@ public class Callbacks {
 		deeper.put(key, r = new ObjectCallbackBuilder<X>());
 	    }
 	    return r;
+	}
+
+	public void array(String key,
+			  final ArrayBeginCallback<X> onBegin,
+			  final ArrayElementCallback<X> onElementCallback,
+			  final Consumer<X> onEnd)
+	{
+	    if (deeper.containsKey(key)) throw new IllegalStateException("An inner object is already registered here: '"+key+"'");
+	    if (here.containsKey(key)) throw new IllegalStateException("Another callback is already registered here: '"+key+"'");
+
+
+	    // TODO Perhaps introduce an ArrayCallbackBuilder if the flexibility is desired.
+	    ArrayNode<X> callback = new ArrayNode<X>() {
+	        @Override public void arrayBegin(X state, int size) {
+		    if (onBegin != null) onBegin.accept(state, size);
+		}
+		@Override public void arrayEnd(X state) {
+		    if (onEnd != null) onEnd.accept(state);
+		}
+		@Override public Callback<X> callbackForElement(X state, int i, int size) {
+		    return onElementCallback.callbackForPosition(state, i, size);
+		}
+	    };
+
+	    here.put(key, callback);
 	}
 
 	public ObjectCallbackBuilder<X> obj(String key) {
