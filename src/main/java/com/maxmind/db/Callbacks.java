@@ -26,6 +26,11 @@ public class Callbacks {
     }
 
     @FunctionalInterface
+    public static interface LongNode<X> extends Callback<X> {
+	public abstract void setValue(X state, long value);
+    }
+
+    @FunctionalInterface
     public static interface DoubleNode<X> extends Callback<X> {
 	public abstract void setValue(X state, double value);
     }
@@ -106,6 +111,12 @@ public class Callbacks {
 	public ObjectCallbackBuilder() {}
 
 	public void text(String key, TextNode<X> callback) {
+	    if (deeper.containsKey(key)) throw new IllegalStateException("An inner object is already registered here: '"+key+"'");
+	    if (here.containsKey(key)) throw new IllegalStateException("Another callback is already registered here: '"+key+"'");
+	    here.put(key, callback);
+	}
+
+	public void integer(String key, LongNode<X> callback) {
 	    if (deeper.containsKey(key)) throw new IllegalStateException("An inner object is already registered here: '"+key+"'");
 	    if (here.containsKey(key)) throw new IllegalStateException("Another callback is already registered here: '"+key+"'");
 	    here.put(key, callback);

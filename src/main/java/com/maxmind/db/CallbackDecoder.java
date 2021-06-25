@@ -281,11 +281,24 @@ final class CallbackDecoder {
             case BYTES:
 		skipByteArray(size); return;
             case UINT16:
-		skipInteger(size); return; //FUT support callback
-            case UINT32:
-		skipInteger(size); return; //FUT support callback
             case INT32:
-		skipInteger(size); return; //FUT support callback
+		if (callback instanceof Callbacks.LongNode) {
+		    Callbacks.LongNode<State> cb = (Callbacks.LongNode<State>)callback;
+		    long value = decodeInteger(size);
+		    cb.setValue(state, value);
+		} else {
+		    skipInteger(size);
+		}
+		return;
+            case UINT32:
+		if (callback instanceof Callbacks.LongNode) {
+		    Callbacks.LongNode<State> cb = (Callbacks.LongNode<State>)callback;
+		    long value = decodeLong(size);
+		    cb.setValue(state, value);
+		} else {
+		    skipInteger(size);
+		}
+		return;
             case UINT64:
             case UINT128:
                 skipBigInteger(size); return;
@@ -458,11 +471,6 @@ final class CallbackDecoder {
     private void skipInteger(int size) {
         skipBytes(size);
     }
-
-    // private BigIntegerNode decodeBigInteger(int size) {
-    //     byte[] bytes = this.getByteArray(size);
-    //     return new BigIntegerNode(new BigInteger(1, bytes));
-    // }
 
     private void skipBigInteger(int size) {
 	skipByteArray(size);

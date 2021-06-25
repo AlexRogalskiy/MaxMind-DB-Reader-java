@@ -83,6 +83,21 @@ public class CallbackReaderTest {
 	    assertEquals("unicode! ☯ - ♫", result.string1.toString());
 	}
 
+	{ // Integer numbers A:
+	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
+	    builder.integer("uint16", (AccumulatorForTypes state, long value) -> state.long1 = value);
+	    builder.integer("int32", (AccumulatorForTypes state, long value) -> state.long2 = value);
+	    AccumulatorForTypes result = runIt.apply("Number values", builder);
+	    assertEquals(100, result.long1);
+	    assertEquals(-268435456, result.long2);
+	}
+	{ // Integer numbers B:
+	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
+	    builder.integer("uint32", (AccumulatorForTypes state, long value) -> state.long1 = value);
+	    AccumulatorForTypes result = runIt.apply("Number values", builder);
+	    assertEquals(268435456L, result.long1);
+	}
+
 	{ // Floating-point numbers:
 	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
 	    builder.number("double", (AccumulatorForTypes state, double value) -> state.double1 = value);
@@ -100,48 +115,44 @@ public class CallbackReaderTest {
 	}
 
 	{ // Arrays - 1:
-	    /* TODO: Support integers nodes (or get better test data).
-	    DoubleNode<AccumulatorForTypes> evenElementCallback = (AccumulatorForTypes state, double value) -> state.string1.append("Even(").append(value).append(")");
-	    DoubleNode<AccumulatorForTypes> oddElementCallback = (AccumulatorForTypes state, double value) -> state.string1.append("Odd(").append(value).append(")");
-	    */
+	    LongNode<AccumulatorForTypes> evenElementCallback = (AccumulatorForTypes state, long value) -> state.string1.append("(Even:").append(value).append(")");
+	    LongNode<AccumulatorForTypes> oddElementCallback = (AccumulatorForTypes state, long value) -> state.string1.append("(Odd:").append(value).append(")");
 
 	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
 	    builder.array("array",
 			  (AccumulatorForTypes state, int size) ->  state.string1.append("(Start:").append(size).append(")"),
-			  (AccumulatorForTypes state, int index, int size) -> { state.string1.append("(Index:").append(index).append("/").append(size).append(")"); return null;/*TODO index % 2 == 0 ? evenElementCallback : oddElementCallback;*/ },
+			  (AccumulatorForTypes state, int index, int size) -> { state.string1.append("(Index:").append(index).append("/").append(size).append(")"); return index % 2 == 0 ? evenElementCallback : oddElementCallback; },
 			  (AccumulatorForTypes state) ->  state.string1.append("(End)")
 			  );
 	    runIt.apply("Warmup", builder); // Resolve dynamic methods?
 	    AccumulatorForTypes result = runIt.apply("Array on top-level", builder);
-	    //TODO assertEquals("(Start:3)(Index:0/3)(Even:1.0)(Index:1/3)(Odd:2.0)(Index:2/3)(Even:3.0)(End)", result.string1.toString());
-	    assertEquals("(Start:3)(Index:0/3)(Index:1/3)(Index:2/3)(End)", result.string1.toString());
+	    assertEquals("(Start:3)(Index:0/3)(Even:1)(Index:1/3)(Odd:2)(Index:2/3)(Even:3)(End)", result.string1.toString());
 	}
 	{ // Arrays - 2:
-	    /* TODO: Support integers nodes (or get better test data).
-	    DoubleNode<AccumulatorForTypes> evenElementCallback = (AccumulatorForTypes state, double value) -> state.string1.append("Even(").append(value).append(")");
-	    DoubleNode<AccumulatorForTypes> oddElementCallback = (AccumulatorForTypes state, double value) -> state.string1.append("Odd(").append(value).append(")");
-	    */
+	    LongNode<AccumulatorForTypes> evenElementCallback = (AccumulatorForTypes state, long value) -> state.string1.append("(Even:").append(value).append(")");
+	    LongNode<AccumulatorForTypes> oddElementCallback = (AccumulatorForTypes state, long value) -> state.string1.append("(Odd:").append(value).append(")");
 
 	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
 	    builder.obj("map").obj("mapX").array("arrayX",
 			  (AccumulatorForTypes state, int size) ->  state.string1.append("(Start:").append(size).append(")"),
-			  (AccumulatorForTypes state, int index, int size) -> { state.string1.append("(Index:").append(index).append("/").append(size).append(")"); return null;/*TODO index % 2 == 0 ? evenElementCallback : oddElementCallback;*/ },
+			  (AccumulatorForTypes state, int index, int size) -> { state.string1.append("(Index:").append(index).append("/").append(size).append(")"); return index % 2 == 0 ? evenElementCallback : oddElementCallback; },
 			  (AccumulatorForTypes state) ->  state.string1.append("(End)")
 			  );
 	    runIt.apply("Warmup", builder); // Resolve dynamic methods?
 	    AccumulatorForTypes result = runIt.apply("Array in sub-object", builder);
-	    //TODO assertEquals("(Start:3)(Index:0/3)(Even:7.0)(Index:1/3)(Odd:8.0)(Index:2/3)(Even:9.0)(End)", result.string1.toString());
-	    assertEquals("(Start:3)(Index:0/3)(Index:1/3)(Index:2/3)(End)", result.string1.toString());
+	    assertEquals("(Start:3)(Index:0/3)(Even:7)(Index:1/3)(Odd:8)(Index:2/3)(Even:9)(End)", result.string1.toString());
 	}
 
 	// Node type not handled yet: "boolean"
 	// Node type not handled yet: "bytes"
 	// Node type not handled yet: "map" - existence signal
-	// Node type not handled yet: "int"
+	// Node type not handled yet: "uint64"/"int128"
     }
 
     static class AccumulatorForTypes {
 	StringBuilder string1 = new StringBuilder(1000);
+	long long1 = 0;
+	long long2 = 0;
 	double double1 = Double.NaN;
 	double double2 = Double.NaN;
 	{
