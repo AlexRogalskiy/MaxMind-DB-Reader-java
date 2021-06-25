@@ -70,7 +70,11 @@ public class CallbackReaderTest {
 	    };
 
 	// Warm up the reader:
-	runIt.apply("Warmup", new RecordCallbackBuilder<AccumulatorForTypes>());
+	for (int i=0; i<100; i++) {
+	    runIt.apply("Warmup", new RecordCallbackBuilder<AccumulatorForTypes>());
+	}
+	System.gc(); // Try to stabilize.
+	Thread.yield(); // Allow for JIT to kick in.
 
 	{ // Strings:
 	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
@@ -91,7 +95,6 @@ public class CallbackReaderTest {
 	{ // Nested records:
 	    RecordCallbackBuilder<AccumulatorForTypes> builder = new RecordCallbackBuilder<>();
 	    builder.obj("map").obj("mapX").text("utf8_stringX", (AccumulatorForTypes state, CharSequence value) -> TextNode.assignToStringBuilder(state.string1, value));
-	    runIt.apply("Warmup", builder); // Resolve dynamic methods?
 	    AccumulatorForTypes result = runIt.apply("Value in nested records", builder);
 	    assertEquals("hello", result.string1.toString());
 	}
